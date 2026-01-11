@@ -561,32 +561,43 @@ function selectPointType(type) {
 }
 
 function loadPoints() {
-    // Load warehouses/points
-    api('/v1/warehouse/list', {}).then(d => {
+    // Load FBO delivery methods (points for supply)
+    api('/v1/delivery-method/list', {
+        filter: {
+            provider_id: 24  // FBO provider
+        },
+        limit: 100,
+        offset: 0
+    }).then(d => {
         if (d.error) {
             document.getElementById('points-list').innerHTML = `<div class="empty-state"><div class="empty-icon">❌</div><div class="empty-text">${d.message}</div></div>`;
             return;
         }
-        S.points = d.result || [];
+        // delivery-method/list returns { result: [...] }
+        S.points = (d.result || []).map(p => ({
+            warehouse_id: p.id,
+            name: p.name || ('Точка ' + p.id),
+            address: p.warehouse_name || p.city || ''
+        }));
         renderPoints();
     });
 }
 
 function renderPoints() {
     var pl = document.getElementById('points-list');
-    
+
     if (!S.points.length) {
-        pl.innerHTML = '<div class="empty-state"><div class="empty-icon">📍</div><div class="empty-title">Точки не найдены</div></div>';
+        pl.innerHTML = '<div class="empty-state"><div class="empty-icon">📍</div><div class="empty-title">Точки не найдены</div><div class="empty-text">Попробуйте выбрать другой тип точки</div></div>';
         return;
     }
-    
-    pl.innerHTML = S.points.slice(0, 10).map((p, i) => {
+
+    pl.innerHTML = S.points.slice(0, 15).map((p, i) => {
         var isSelected = S.selectedPoint && S.selectedPoint.warehouse_id === p.warehouse_id;
         return `<div class="point-item ${isSelected ? 'selected' : ''}" onclick="selectPoint(${i})">
             <div class="point-icon">📍</div>
             <div class="point-info">
-                <div class="point-name">${p.name || 'Склад ' + p.warehouse_id}</div>
-                <div class="point-address">ID: ${p.warehouse_id}</div>
+                <div class="point-name">${p.name || 'Точка ' + p.warehouse_id}</div>
+                <div class="point-address">${p.address ? p.address + ' • ' : ''}ID: ${p.warehouse_id}</div>
             </div>
         </div>`;
     }).join('');
@@ -773,7 +784,7 @@ function formatDateShort(d) {
 
 function testConn() {
     setConn(null, 'Проверка...');
-    api('/v1/warehouse/list', {}).then(d => {
+    api('/v1/delivery-method/list', {filter: {provider_id: 24}, limit: 1, offset: 0}).then(d => {
         if (d.error) {
             setConn(false, 'Ошибка');
         } else {
