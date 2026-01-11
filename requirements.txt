@@ -1,2 +1,1 @@
-# OZON FBO Supply Manager
-# Все зависимости встроены в Python, файл нужен для Render/Railway
+# FBO v4

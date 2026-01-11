@@ -1,14 +1,5 @@
-services:
+-e services:
   - type: web
-    name: fbo-supply-manager
+    name: fbo-supply
     env: python
-    plan: starter
-    buildCommand: ""
     startCommand: python app.py
-    envVars:
-      - key: OZON_CLIENT_ID
-        sync: false
-      - key: OZON_API_KEY
-        sync: false
-      - key: PORT
-        value: 8080
