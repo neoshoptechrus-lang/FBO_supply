@@ -561,26 +561,33 @@ function selectPointType(type) {
 }
 
 function loadPoints() {
-    // Load FBO delivery methods (points for supply)
-    api('/v1/delivery-method/list', {
-        filter: {
-            provider_id: 24  // FBO provider
-        },
-        limit: 100,
-        offset: 0
-    }).then(d => {
+    // Load FBO warehouses for supply - use correct FBO endpoint
+    api('/v1/warehouse/fbo/list', {}).then(d => {
         if (d.error) {
-            document.getElementById('points-list').innerHTML = `<div class="empty-state"><div class="empty-icon">❌</div><div class="empty-text">${d.message}</div></div>`;
+            // Fallback to regular warehouse list if FBO endpoint fails
+            console.log('FBO list failed, trying regular warehouse list...');
+            api('/v1/warehouse/list', {}).then(d2 => {
+                if (d2.error) {
+                    document.getElementById('points-list').innerHTML = `<div class="empty-state"><div class="empty-icon">❌</div><div class="empty-text">${d2.message || d.message}</div></div>`;
+                    return;
+                }
+                processWarehouses(d2.result || []);
+            });
             return;
         }
-        // delivery-method/list returns { result: [...] }
-        S.points = (d.result || []).map(p => ({
-            warehouse_id: p.id,
-            name: p.name || ('Точка ' + p.id),
-            address: p.warehouse_name || p.city || ''
-        }));
-        renderPoints();
+        processWarehouses(d.result || []);
     });
+}
+
+function processWarehouses(warehouses) {
+    // Map warehouse data to unified format
+    S.points = warehouses.map(p => ({
+        warehouse_id: p.warehouse_id || p.id,
+        name: p.name || ('Склад ' + (p.warehouse_id || p.id)),
+        address: p.address || p.city || '',
+        is_fbo: p.is_fbo !== false
+    }));
+    renderPoints();
 }
 
 function renderPoints() {
@@ -721,24 +728,39 @@ function renderDrafts(c) {
 function loadDrafts() {
     var dl = document.getElementById('drafts-list');
     dl.innerHTML = '<div class="loading"><div class="spinner"></div>Загрузка...</div>';
-    
-    api('/v1/supply-order/list', {filter: {}}).then(d => {
-        if (d.error) {
-            dl.innerHTML = `<div class="empty-state"><div class="empty-icon">❌</div><div class="empty-text">${d.message}</div></div>`;
+
+    // Try multiple endpoints for supply orders (API changed over time)
+    var endpoints = [
+        '/v1/supply-order/list',
+        '/v1/supply/list'
+    ];
+
+    function tryEndpoint(idx) {
+        if (idx >= endpoints.length) {
+            dl.innerHTML = '<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-title">Нет данных</div><div class="empty-text">API поставок недоступен или нет заявок</div></div>';
             return;
         }
-        var items = d.supply_orders || d.result || [];
-        if (!items.length) {
-            dl.innerHTML = '<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-title">Нет заявок</div></div>';
-            return;
-        }
-        dl.innerHTML = items.map(s => `
-            <div style="padding:16px;border:1px solid #e4e7ed;border-radius:12px;margin-bottom:8px">
-                <div style="font-weight:600">#${s.supply_order_id || s.id}</div>
-                <div style="font-size:13px;color:#5c6b7a">${s.state || 'Статус неизвестен'}</div>
-            </div>
-        `).join('');
-    });
+
+        api(endpoints[idx], {filter: {}, limit: 50}).then(d => {
+            if (d.error || d.code === 404) {
+                tryEndpoint(idx + 1);
+                return;
+            }
+            var items = d.supply_orders || d.result || d.items || [];
+            if (!items.length) {
+                dl.innerHTML = '<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-title">Нет заявок</div></div>';
+                return;
+            }
+            dl.innerHTML = items.map(s => `
+                <div style="padding:16px;border:1px solid #e4e7ed;border-radius:12px;margin-bottom:8px">
+                    <div style="font-weight:600">#${s.supply_order_id || s.supply_id || s.id}</div>
+                    <div style="font-size:13px;color:#5c6b7a">${s.state || s.status || 'Статус неизвестен'}</div>
+                </div>
+            `).join('');
+        });
+    }
+
+    tryEndpoint(0);
 }
 
 // Logs page
@@ -784,9 +806,10 @@ function formatDateShort(d) {
 
 function testConn() {
     setConn(null, 'Проверка...');
-    api('/v1/delivery-method/list', {filter: {provider_id: 24}, limit: 1, offset: 0}).then(d => {
+    // Use warehouse/list as it's the most reliable endpoint
+    api('/v1/warehouse/list', {}).then(d => {
         if (d.error) {
-            setConn(false, 'Ошибка');
+            setConn(false, 'Ошибка: ' + (d.message || '').slice(0, 30));
         } else {
             setConn(true, 'Подключено');
         }
